@@ -43,6 +43,7 @@
 #include "XPT2046_touch.h"
 #include "ColorSpaces.h"
 #include "joystick.h"
+#include "game.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -74,11 +75,15 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-
 void UserPixelSetFunction(UG_S16 x, UG_S16 y, UG_COLOR c)
 {
 	ILI9341_SetDisplayWindow(x, y, 1, 1);
 	ILI9341_SendData((LCD_IO_Data_t *)&c, 1);
+}
+
+void FramePixelSet(UG_S16 x, UG_S16 y, UG_COLOR c)
+{
+	G_setFramePixel(x, y, c);
 }
 
 UG_RESULT _HW_FillFrame_(UG_S16 x, UG_S16 y, UG_S16 w, UG_S16 h, UG_COLOR c)
@@ -89,6 +94,7 @@ UG_RESULT _HW_FillFrame_(UG_S16 x, UG_S16 y, UG_S16 w, UG_S16 h, UG_COLOR c)
 }
 
 UG_GUI gui;
+GFrame frame;
 
 void DrawStartScreen()
 {
@@ -138,7 +144,7 @@ float DrawColors(float intensity)
 		{
 			HSV.H=360-2*i;
 			HSVtoRGB(&HSV, &RGB);
-			array[counter]=RGB888_to_RGB565(&RGB);
+			array[counter]= RGB888_to_RGB565(&RGB);
 			counter++;
 	  }
 	}
@@ -159,6 +165,72 @@ float DrawColors(float intensity)
 	return framerate;
 }
 
+void DrawSMTH()
+{
+	uint32_t sizex, sizey;
+	uint8_t color = (uint8_t)C_MIDNIGHT_BLUE;
+	uint16_t Data;
+	uint8_t *array;
+	uint32_t counter;
+	sizex = 300;
+	sizey = 200;
+	array = (uint8_t *) malloc(300*200);
+	counter = 0;
+
+	ILI9341_SetDisplayWindow(0, 0, 300, 200);
+
+	for (int j=0; j<sizey;j++) //vrstice
+	{
+		for (int i=0; i<sizex;i++) //stolpci
+		{
+			array[counter]= color;
+			counter++;
+	  }
+	}
+
+	for (counter = 0; counter<sizex*sizey; counter+=sizey)
+	{
+		Data = array[counter];
+		array[counter]=0;
+		ILI9341_SendData((uint16_t*)array, sizex*sizey);
+		array[counter] = Data;
+	}
+
+	free(array);
+}
+
+void drawStartScreen()
+{
+	LCD_ClearScreen();
+
+	uint16_t pozicija_y=135, pozicija_x=60;
+
+	UG_FontSelect(&FONT_32X53);
+	UG_SetForecolor(C_VIOLET);
+	UG_PutString(pozicija_x,pozicija_y,"Start\nGame");
+}
+
+void update_cursor( coord_t *cursor, coord_t js, int x_dim, int y_dim ) {
+	int r = 5;
+	int bounds[] = { 0+r, x_dim-r-1, 0+r, y_dim-r-1 };
+
+
+	cursor->x += js.x;
+	cursor->y += js.y;
+
+	if (cursor->x > bounds[1]) {
+		cursor->x = bounds[1];
+	} else if (cursor->x < bounds[0]) {
+		cursor->x = bounds[0];
+	}
+	if (cursor->y > bounds[3]) {
+		cursor->y = bounds[3];
+	} else if (cursor->y < bounds[2]) {
+		cursor->y = bounds[2];
+	}
+	//UG_DrawCircle(joystick_out.x+200, joystick_out.y+50, 5, C_YELLOW);
+	UG_FillCircle(cursor->x, cursor->y, r, C_WHITE);
+}
 
 /* USER CODE END 0 */
 
@@ -169,13 +241,10 @@ float DrawColors(float intensity)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	coord_t joystick_raw, joystick_out;
 	joystick_t joystick;
-	uint8_t MSG[100]={0};
-	uint16_t touch_x = 0, touch_y = 0;
 
-	char str[10];
-	float framerate;
+//	char str[10];
+//	float framerate;
 
   /* USER CODE END 1 */
 
@@ -227,87 +296,79 @@ int main(void)
   LED_init();
   KBD_init();
   SCI_init();
-  joystick_init(&joystick);
+
+
+
+
+
+  LCD_Init();
+  //DrawSMTH();
+  HAL_Delay(2000);
+//UG_Init(&gui, UserPixelSetFunction, ILI9341_GetParam(LCD_WIDTH), ILI9341_GetParam(LCD_HEIGHT));
+  UG_Init(&gui, FramePixelSet, 200, 150);//ILI9341_GetParam(LCD_WIDTH), ILI9341_GetParam(LCD_HEIGHT));
+  UG_FontSelect(&FONT_8X12);
+  UG_SetForecolor(C_WHITE);
+  UG_SetBackcolor(C_MIDNIGHT_BLUE);
+
+  ILI9341_SetDisplayWindow(60, 45, 200, 150);//ILI9341_GetParam(LCD_WIDTH), ILI9341_GetParam(LCD_HEIGHT));
+
+  joystick_init(&joystick, &hadc4);
+  G_Init(&frame);
+
+
+
 
   for (uint8_t i=0;i<3;i++)
   {
-	  HAL_Delay(250);
+	  HAL_Delay(50);
 	  LEDs_on(0xFF);
-	  HAL_Delay(250);
+	  HAL_Delay(50);
 	  LEDs_off(0xFF);
   }
 
-  LCD_Init();
-  UG_Init(&gui, UserPixelSetFunction, ILI9341_GetParam(LCD_WIDTH), ILI9341_GetParam(LCD_HEIGHT));
-  UG_FontSelect(&FONT_8X12);
-  UG_SetForecolor(C_WHITE);
-  UG_SetBackcolor(C_BLACK);
-  UG_DriverRegister(DRIVER_FILL_FRAME, (void *)_HW_FillFrame_);
-  UG_DriverEnable(DRIVER_FILL_FRAME);
+  // *** GUI and LCD init ***
 
-  DrawStartScreen();
-  framerate = DrawColors(80);
 
-  UG_SetForecolor(C_WHITE);
-  UG_FontSelect(&FONT_16X26);
-  sprintf(str,"%.0f fps",framerate);
-  UG_PutString(5,105,str);
+  //UG_DriverRegister(DRIVER_FILL_FRAME, (void *)_HW_FillFrame_);
+  //UG_DriverEnable(DRIVER_FILL_FRAME);
+
+  //DrawStartScreen();
+  //DrawColors(80);
+
 
   /* USER CODE END 2 */
-
   /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
 
   while (1)
   {
-    /* USER CODE END WHILE */
+/*
+	LED_set(LED0, !KBD_get_button_state(BTN_OK));
+	LED_set(LED1, !KBD_get_button_state(BTN_DOWN));
+	LED_set(LED2, !KBD_get_button_state(BTN_RIGHT));
+	LED_set(LED3, !KBD_get_button_state(BTN_UP));
+	LED_set(LED4, !KBD_get_button_state(BTN_LEFT));
+	LED_set(LED6, !KBD_get_button_state(BTN_ESC));
+	LED_set(LED7, !KBD_get_button_state(BTN_JOY));
+*/
 
-    /* USER CODE BEGIN 3 */
+// ** UPDATE CANVAS
 
-	  LED_set(LED0, !KBD_get_button_state(BTN_OK));
-	  LED_set(LED1, !KBD_get_button_state(BTN_DOWN));
-	  LED_set(LED2, !KBD_get_button_state(BTN_RIGHT));
-	  LED_set(LED3, !KBD_get_button_state(BTN_UP));
-	  LED_set(LED4, !KBD_get_button_state(BTN_LEFT));
-	  LED_set(LED6, !KBD_get_button_state(BTN_ESC));
-	  LED_set(LED7, !KBD_get_button_state(BTN_JOY));
+	G_update();
 
-	 HAL_ADC_Start(&hadc4);
-	 HAL_ADC_PollForConversion(&hadc4,10);// Waiting for ADC conversion
-	 joystick_raw.x=HAL_ADC_GetValue(&hadc4);
-
-	 HAL_ADC_Start(&hadc4);
-	 HAL_ADC_PollForConversion(&hadc4,10);// Waiting for ADC conversion
-	 joystick_raw.y=HAL_ADC_GetValue(&hadc4);
-	 HAL_ADC_Stop(&hadc4);
-
-	 joystick_get(&joystick_raw, &joystick_out, &joystick);
-	 UG_DrawCircle(joystick_out.x+250, joystick_out.y+50,5, C_YELLOW);
+	// Draw Frame
+	//ILI9341_SendData(frame.matrix, frame.len);
 
 
-	if(XPT2046_TouchPressed())
-	{
-		uint16_t x = 0, y = 0;
 
-		if(XPT2046_TouchGetCoordinates(&x, &y, 0))
-		{
-			touch_x = x;
-			touch_y = y;
-			UG_FillCircle(x, y,2, C_GREEN);
-			UG_FillCircle(250, 50, 49, C_BLACK);
-		}
-	}
-
-	 sprintf(MSG, "Joystick X:%05d, Y:%05d, Touch: X:%05d, Y:%05d    \r",joystick_out.x,joystick_out.y, touch_x, touch_y);
-	 SCI_send_string(MSG);
-	 CDC_Transmit_FS(MSG, strlen(MSG));
-	 UG_DrawCircle(250, 50, 50, C_RED);
-
-	 HAL_Delay(20);
   }
-
   /* USER CODE END 3 */
 }
+
+
+
+
+
+
 
 /**
   * @brief System Clock Configuration
